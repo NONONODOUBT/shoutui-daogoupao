@@ -109,3 +109,31 @@ def omega_n(kp):
 
 def overshoot_formula(z):
     return 100 * np.exp(-np.pi * z / np.sqrt(1 - z * z)) if z < 1 else 0.0
+
+
+if __name__ == "__main__":
+    # 直接运行本文件时的演示：打印本期的几个关键数，并画出 P / PI / PID 三条曲线。
+    # 平时是被 notebook 用 from pid_sim import * 调用的。
+    import matplotlib.pyplot as plt
+    plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DejaVu Sans"]
+    plt.rcParams["axes.unicode_minus"] = False
+    cases = [Case("只用 P（Kp=2）", kp=2, tau_load=0.05, t_end=10),
+             Case("PI（Kp=2, Ki=5，没有 D）", kp=2, ki=5, tau_load=0.05, t_end=6),
+             Case("PID（Kp=2, Ki=5, Kd=0.3）", kp=2, ki=5, kd=0.3, tau_load=0.05, t_end=6)]
+    print("稳态误差（只用 P）：", round(steady_error(simulate(cases[0]), cases[0]) * 1000, 2), "mrad，公式 τL/(Kt·Kp) =",
+          round(0.05 / (KT * 2) * 1000, 2), "mrad")
+    print("阻尼比：Kd=0 时", round(zeta_pd(2, 0), 3), "；Kd=0.3 时", round(zeta_pd(2, 0.3), 3))
+    print("没有 D 时 Ki 的上限：", round(B * 2 / J, 2), "；Kd=0.3 时：", round((B + KT * 0.3) * 2 / J, 2))
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for c in cases:
+        r = simulate(c)
+        ax.plot(r["t"], r["q"], label=c.name)
+    ax.axhline(0.2, color="k", ls="--", lw=1, label="目标")
+    ax.axvline(1.5, color="gray", ls=":", lw=0.8)
+    ax.set_xlim(0, 6)
+    ax.set_ylim(-0.1, 0.5)
+    ax.set_xlabel("时间 t / s")
+    ax.set_ylabel("俯仰角 q / rad")
+    ax.set_title("云台俯仰轴：只用 P / 加积分 / 再加微分（1.5 s 装上枪管）")
+    ax.legend(loc="upper right")
+    plt.show()
