@@ -37,8 +37,32 @@ KP, KD, TAU_MAX = 60.0, 1.5, 30.0   # KP=40 时机身有约 1 Hz 的前后晃动
 BOARD_Z = 0.30             # 板子转轴高度
 
 
+LITE3_FILES = ["Lite3.xml", "LICENSE.txt"] + [f"meshes/{n}.STL" for n in ("torso", "hip", "thigh", "shank")]
+LITE3_URLS = ["https://gitee.com/nononodoubt/shoutui-daogoupao/raw/main/四足/一只狗怎么站起来/lite3/",
+              "https://raw.githubusercontent.com/NONONODOUBT/shoutui-daogoupao/main/四足/一只狗怎么站起来/lite3/"]
+
+
+def download_lite3(dst):
+    """只拿到 notebook、旁边没有 lite3/ 时，从配套仓库下载模型（约 3 MB，国内先走 Gitee）。"""
+    from urllib.parse import quote
+    from urllib.request import urlopen
+    for base in LITE3_URLS:
+        try:
+            for f in LITE3_FILES:
+                data = urlopen(quote(base + f, safe=":/"), timeout=30).read()
+                (dst / f).parent.mkdir(parents=True, exist_ok=True)
+                (dst / f).write_bytes(data)
+            print(f"已下载 Lite3 模型到 {dst}")
+            return
+        except OSError as e:
+            print(f"从 {base.split('/')[2]} 下载失败（{e}），换一个地址")
+    raise FileNotFoundError(f"找不到 Lite3 模型：请把配套仓库里的 lite3/ 文件夹放到 {dst.parent}")
+
+
 def load_model():
     """MuJoCo 在 Windows 上打不开中文路径：自己读 XML 和网格，以内容形式传进去。"""
+    if not (MJCF / "Lite3.xml").exists():
+        download_lite3(MJCF)
     xml = (MJCF / "Lite3.xml").read_text(encoding="utf-8")
     assets = {f"./meshes/{p.name}": p.read_bytes() for p in (MJCF / "meshes").iterdir()}
     spec = mujoco.MjSpec.from_string(xml, assets)
