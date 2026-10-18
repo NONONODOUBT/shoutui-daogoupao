@@ -27,6 +27,7 @@ B 站系列《手推到狗跑》的配套练习：从一个电机、一根云台
 | 视频 | 这期解决的问题 | 材料 |
 |---|---|---|
 | 《手推到狗跑》一只狗怎么站起来？学出来的更准，为什么先翻的是它 | 关节 PD 只负责“跟上”；用腿长几何手推一个平衡层；同一个位置换成 4 个参数学出来；改得越急越准但越怕延迟；域随机化 | [四足/一只狗怎么站起来](四足/一只狗怎么站起来) |
+| 《手推到狗跑》让狗走起来，要解决哪几件事？ | 走路的四件事（步态时序、落脚点、平衡、关节跟踪）；一条腿的正 / 逆运动学（余弦定理）；手写小跑 vs 官方 RL 策略；悬崖式失败 vs 慢慢变差 | [四足/让狗走起来](四足/让狗走起来) |
 
 ## 运行环境
 
@@ -51,3 +52,4 @@ jupyter notebook
 - 代码（`.py`、`.ipynb` 中的代码）：MIT License
 - 练习单与文字材料：CC BY-NC-SA 4.0（可以转载和改编，需署名、非商业、相同方式共享）
 - 四足各期附带的 `lite3/` 模型来自 [DeepRoboticsLab/deep_robotics_model](https://github.com/DeepRoboticsLab/deep_robotics_model)，遵循其 BSD-3-Clause 许可（见各文件夹内 `lite3/LICENSE.txt`）
+- `四足/让狗走起来/lite3_policy.npz` 是 [DeepRoboticsLab/Lite3_rl_deploy](https://github.com/DeepRoboticsLab/Lite3_rl_deploy) 官方走路策略（policy.onnx）的权重，遵循其 BSD-3-Clause 许可（见同文件夹 `LICENSE_Lite3_rl_deploy.txt`）
