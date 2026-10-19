@@ -35,6 +35,7 @@ LEGS = ["FL", "FR", "HL", "HR"]
 
 
 REPO = ["https://gitee.com/nononodoubt/shoutui-daogoupao/raw/main/四足/让狗走起来/",
+        "https://fastly.jsdelivr.net/gh/NONONODOUBT/shoutui-daogoupao@main/四足/让狗走起来/",
         "https://raw.githubusercontent.com/NONONODOUBT/shoutui-daogoupao/main/四足/让狗走起来/"]
 LITE3_FILES = ["lite3/Lite3.xml", "lite3/LICENSE.txt"] + [f"lite3/meshes/{n}.STL" for n in ("torso", "hip", "thigh", "shank")]
 
@@ -46,7 +47,7 @@ def download(files, dst):
     for base in REPO:
         try:
             for f in files:
-                data = urlopen(quote(base + f, safe=":/"), timeout=30).read()
+                data = urlopen(quote(base + f, safe=":/@"), timeout=30).read()
                 (dst / f).parent.mkdir(parents=True, exist_ok=True)
                 (dst / f).write_bytes(data)
             print(f"已下载 {', '.join(Path(f).name for f in files)} 到 {dst}")

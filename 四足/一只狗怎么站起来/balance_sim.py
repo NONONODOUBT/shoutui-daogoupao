@@ -39,6 +39,7 @@ BOARD_Z = 0.30             # 板子转轴高度
 
 LITE3_FILES = ["Lite3.xml", "LICENSE.txt"] + [f"meshes/{n}.STL" for n in ("torso", "hip", "thigh", "shank")]
 LITE3_URLS = ["https://gitee.com/nononodoubt/shoutui-daogoupao/raw/main/四足/一只狗怎么站起来/lite3/",
+              "https://fastly.jsdelivr.net/gh/NONONODOUBT/shoutui-daogoupao@main/四足/一只狗怎么站起来/lite3/",
               "https://raw.githubusercontent.com/NONONODOUBT/shoutui-daogoupao/main/四足/一只狗怎么站起来/lite3/"]
 
 
@@ -49,7 +50,7 @@ def download_lite3(dst):
     for base in LITE3_URLS:
         try:
             for f in LITE3_FILES:
-                data = urlopen(quote(base + f, safe=":/"), timeout=30).read()
+                data = urlopen(quote(base + f, safe=":/@"), timeout=30).read()
                 (dst / f).parent.mkdir(parents=True, exist_ok=True)
                 (dst / f).write_bytes(data)
             print(f"已下载 Lite3 模型到 {dst}")
