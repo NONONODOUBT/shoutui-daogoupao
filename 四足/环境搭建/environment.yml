@@ -1,0 +1,18 @@
+# shoutui-daogoupao course env (CPU: MuJoCo + Jupyter)
+# Create:   conda env create -f environment.yml
+# Kernel:   conda activate shoutui
+#           python -m ipykernel install --user --name shoutui --display-name "shoutui"
+# Keep this file ASCII-only: conda on Chinese Windows may read it as GBK and choke on Chinese comments.
+# GPU training later goes into a separate env -- do not install it here.
+name: shoutui
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - numpy=2.4
+  - matplotlib=3.11
+  - ipykernel
+  - jupyterlab
+  - pip:
+      - mujoco==3.16.0
