@@ -8,7 +8,8 @@
 
 1. **先手推**：打印 `练习单.pdf`，五道题都给了起点和终点，中间自己写。
 2. **再对答案**：`练习单_答案.pdf`。
-3. **最后用代码验证**：`jupyter lab 验证.ipynb`，从上往下运行。前五节只要 numpy 和 matplotlib；最后一节“射门”要 mujoco（用上一期建好的 `shoutui` 环境即可）。
+3. **最后用代码验证**：`jupyter lab 验证.ipynb`，从上往下运行。前五节只要 numpy 和 matplotlib；最后一节“射门”要 mujoco（用上一期建好的 `shoutui` 环境即可），notebook 里会直接放出踢球动画。
+4. **想转着看**：终端里运行 `python sim.py --view`，弹出 MuJoCo 的 3D 窗口回放“射门”（鼠标拖动旋转、滚轮缩放）。macOS 用 `mjpython sim.py --view`。
 
 ## 文件
 

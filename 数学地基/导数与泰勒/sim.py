@@ -20,6 +20,161 @@ try:
 except NameError:                  # 在 notebook 格子里运行时没有 __file__
     _HERE = Path.cwd()
 
+# ---------------- 可视化（notebook 动画 / 3D 窗口）----------------
+"""notebook 可视化公共件：MuJoCo 画面在 notebook 里放动画、几个画面并排对比、弹出 3D 窗口回放。
+发布时由 make_release.py 原样并进每期的仿真文件（release.viz: true），notebook 仍然单文件能跑。
+
+    frames = mj_frames(m, traj, cam=dict(lookat=[0, 0, 0.3], distance=1.3, azimuth=145, elevation=-14))
+    show(frames)                                  # notebook 里放动画（能播放、暂停、拖动）
+    show([frames_a, frames_b], titles=["只有 PD", "手推"])     # 并排对比，同步播放
+    mj_view(m, traj, cam=...)                      # 弹出 MuJoCo 3D 窗口回放（鼠标拖动旋转、滚轮缩放）
+
+traj 是 qpos 列表，或 (qpos, mocap_quat) 的列表（带会动的板子时）。
+"""
+import numpy as _np
+
+
+def style_spec(spec):
+    """画面和视频一致：渐变天空、淡色地面格子（compile 之前调用）。"""
+    import mujoco
+    spec.add_texture(name="sky", type=mujoco.mjtTexture.mjTEXTURE_SKYBOX, builtin=mujoco.mjtBuiltin.mjBUILTIN_GRADIENT,
+                     rgb1=[0.62, 0.76, 0.92], rgb2=[0.09, 0.13, 0.23], width=512, height=3072)
+    for t in spec.textures:
+        if t.name == "checker":
+            t.rgb1, t.rgb2 = [0.70, 0.75, 0.82], [0.86, 0.89, 0.93]
+    return spec
+
+
+def style_model(m):
+    """机身改成中性灰（compile 之后调用），和蓝天分得开。"""
+    dog = (m.geom_bodyid > 0) & (m.geom_group == 2) & (m.geom_matid < 0)
+    m.geom_rgba[dog] = [0.58, 0.60, 0.64, 1]
+    return m
+
+
+def _set_cam(cam, spec):
+    for k in ("distance", "azimuth", "elevation"):
+        if k in spec:
+            setattr(cam, k, spec[k])
+    if "lookat" in spec:
+        cam.lookat[:] = spec["lookat"]
+    return cam
+
+
+def _apply(d, item):
+    """traj 的一项写进 MjData：qpos，或 (qpos, 板子姿态四元数)。"""
+    if isinstance(item, tuple):
+        d.qpos[:] = item[0]
+        d.mocap_quat[0] = item[1]
+    else:
+        d.qpos[:] = item
+
+
+def mj_frames(m, traj, cam=None, size=(480, 270), every=1, follow=None, overlay=None):
+    """离屏渲染 traj（不弹窗口），返回 RGB 帧列表。
+    follow=k：镜头跟着机身慢慢走（k 是每帧追上的比例，如 0.08）；overlay(scene, data)：每帧往场景里加东西（虚影、轨迹）。"""
+    import mujoco
+    w, h = size
+    m.vis.global_.offwidth, m.vis.global_.offheight = max(m.vis.global_.offwidth, w), max(m.vis.global_.offheight, h)
+    d = mujoco.MjData(m)
+    r = mujoco.Renderer(m, h, w, max_geom=4000)
+    c = _set_cam(mujoco.MjvCamera(), cam or {})
+    opt = mujoco.MjvOption()
+    opt.geomgroup[1] = 0                      # 不画碰撞网格（半透明蓝壳）
+    base = _np.array(c.lookat)
+    look, frames = None, []
+    for i, item in enumerate(traj[::every]):
+        _apply(d, item)
+        mujoco.mj_forward(m, d)
+        if follow:
+            tgt = _np.array([d.qpos[0], d.qpos[1], base[2]])
+            look = tgt if look is None else look + follow * (tgt - look)
+            c.lookat[:] = look
+        r.update_scene(d, c, opt)
+        if overlay:
+            overlay(r.scene, d)
+        frames.append(r.render().copy())
+    r.close()
+    return frames
+
+
+def caption(frames, text, color=(255, 255, 255)):
+    """在每帧左上角写一行字（中文可用）。"""
+    from PIL import Image, ImageDraw, ImageFont
+    fo, px = None, max(14, frames[0].shape[0] // 14)
+    for name in ("msyh.ttc", "simhei.ttf", "PingFang.ttc", "/System/Library/Fonts/PingFang.ttc",
+                 "NotoSansCJK-Regular.ttc", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                 "wqy-microhei.ttc", "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"):
+        try:
+            fo = ImageFont.truetype(name, px)          # Windows / macOS / Linux 常见中文字体，找到哪个用哪个
+            break
+        except OSError:
+            continue
+    fo = fo or ImageFont.load_default()
+    out = []
+    for f in frames:
+        im = Image.fromarray(f)
+        ImageDraw.Draw(im).text((10, 8), text, font=fo, fill=color, stroke_width=3, stroke_fill=(20, 24, 40))
+        out.append(_np.asarray(im))
+    return out
+
+
+def show(frames, titles=None, fps=15, width=None):
+    """在 notebook 里放动画。frames 可以是一组帧，也可以是几组帧的列表（并排同步播放，短的停在最后一帧）。
+    width=None：按帧的原始像素嵌入（文件最小、不糊）；给英寸数则缩放到这个宽度。"""
+    import matplotlib.pyplot as plt
+    from matplotlib import animation, rcParams
+    from IPython.display import HTML
+    groups = frames if isinstance(frames[0], list) else [frames]
+    n = max(len(g) for g in groups)
+    h, w = groups[0][0].shape[:2]
+    dpi = 80
+    width = width or len(groups) * w / dpi * 1.01
+    fig, axes = plt.subplots(1, len(groups), figsize=(width, width / len(groups) * h / w + (0.35 if titles else 0)), dpi=dpi)
+    axes = _np.atleast_1d(axes)
+    ims = []
+    for k, (ax, g) in enumerate(zip(axes, groups)):
+        ax.axis("off")
+        ims.append(ax.imshow(g[0]))
+        if titles:
+            ax.set_title(titles[k], fontsize=11)
+    fig.subplots_adjust(left=0, right=1, bottom=0, top=1 if not titles else 1 - 0.3 / fig.get_figheight(), wspace=0.02)
+
+    def step(i):
+        for im, g in zip(ims, groups):
+            im.set_data(g[min(i, len(g) - 1)])
+        return ims
+    anim = animation.FuncAnimation(fig, step, frames=n, interval=1000 / fps)
+    plt.close(fig)
+    rcParams["animation.frame_format"] = "jpeg"           # 比 png 小很多，GitHub 网页上也能直接看
+    rcParams["animation.embed_limit"] = 60
+    return HTML(anim.to_jshtml(fps=fps, default_mode="loop"))
+
+
+def mj_view(m, traj, cam=None, fps=30, repeat=3, overlay=None):
+    """弹出 MuJoCo 自带的 3D 窗口回放 traj：鼠标左键拖动旋转、右键平移、滚轮缩放；播完 repeat 遍自动关闭。
+    macOS 上要用 mjpython 运行；远程服务器、没有显示器的环境请用 show()。"""
+    import time
+    import mujoco
+    import mujoco.viewer
+    d = mujoco.MjData(m)
+    with mujoco.viewer.launch_passive(m, d) as v:
+        _set_cam(v.cam, cam or {})
+        v.opt.geomgroup[1] = 0
+        for _ in range(repeat):
+            for item in traj:
+                if not v.is_running():
+                    return
+                _apply(d, item)
+                mujoco.mj_forward(m, d)
+                if overlay:
+                    with v.lock():
+                        v.user_scn.ngeom = 0
+                        overlay(v.user_scn, d)
+                v.sync()
+                time.sleep(1 / fps)
+            time.sleep(1.0)
+
 # ---------------- 腿的几何（和 Lite3.xml 一致）----------------
 L1 = 0.20                  # 大腿：髋轴 → 膝轴（m）
 L2 = 0.21012               # 小腿：膝轴 → 脚心（m）
@@ -208,7 +363,91 @@ def kick(m=None, deg=KICK_DEG, T=2.5, fps=60, traj=None):
     return {k: np.array(v) for k, v in log.items()}
 
 
+# ---------------- 看画面：notebook 里放动画 / 弹出 3D 窗口 ----------------
+ORANGE_RGBA = [1.0, 0.62, 0.20, 0.55]
+CYAN_RGBA = [0.20, 0.85, 0.95, 0.95]
+
+
+def _camera(cam):
+    cam.lookat[:] = [0.30, HIP_Y, 0.17]
+    cam.distance, cam.azimuth, cam.elevation = 1.15, 90, -6        # 从右侧看，狗朝右
+    return cam
+
+
+def _add(scn, kind, rgba, a, b=None, r=0.004):
+    """往场景里加一个球（b=None）或一段胶囊（a→b）：画直线预测的脚和轨迹用。"""
+    import mujoco
+    if scn.ngeom >= scn.maxgeom:
+        return
+    g = scn.geoms[scn.ngeom]
+    if b is None:
+        mujoco.mjv_initGeom(g, mujoco.mjtGeom.mjGEOM_SPHERE, np.array([r, 0, 0]), np.asarray(a, float),
+                            np.eye(3).flatten(), np.array(rgba, np.float32))
+    else:
+        mujoco.mjv_initGeom(g, mujoco.mjtGeom.mjGEOM_CAPSULE, np.zeros(3), np.zeros(3), np.zeros(9), np.array(rgba, np.float32))
+        mujoco.mjv_connector(g, mujoco.mjtGeom.mjGEOM_CAPSULE, r, np.asarray(a, float), np.asarray(b, float))
+    scn.ngeom += 1
+
+
+class _Trails:
+    """记下真实的脚（青）和直线预测的脚（橙）走过的点，每帧画进场景。"""
+
+    def __init__(self, m):
+        import mujoco
+        self.fid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "FR_FOOT")
+        self.tid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "FR_THIGH")
+        self.real, self.pred = [], []
+
+    def draw(self, scn, d):
+        dh = d.qpos[3 * KICK_LEG + 1] - STAND[0]
+        p = predict(*STAND, dh)
+        self.real.append(d.xpos[self.fid].copy())
+        self.pred.append(d.xpos[self.tid] + np.array([p[0], 0, p[1]]))
+        for k in range(1, len(self.real)):
+            _add(scn, "seg", CYAN_RGBA, self.real[k - 1], self.real[k])
+            _add(scn, "seg", ORANGE_RGBA[:3] + [0.9], self.pred[k - 1], self.pred[k])
+        _add(scn, "ball", ORANGE_RGBA, self.pred[-1], r=FOOT_R)
+
+
+CAM = dict(lookat=[0.30, HIP_Y, 0.17], distance=1.15, azimuth=90, elevation=-6)    # 从右侧看，狗朝右
+
+
+def _kick_traj(m, slow=4, fps=30):
+    traj = []
+    kick(m, T=KICK_T0 + KICK_RAMP + 0.5, fps=fps * slow, traj=traj)
+    return traj[int((KICK_T0 - 0.15) * fps * slow):]                  # 从起脚前一点开始
+
+
+def render_kick(slow=4, size=(480, 270), overlay=True, m=None):
+    """离屏渲染踢球过程（不弹窗口），返回 RGB 帧列表。slow=4：4 倍慢放；overlay：叠上直线预测的脚和两条轨迹。"""
+    m = m or load_model()
+    trails = _Trails(m)
+    return mj_frames(m, _kick_traj(m, slow), cam=CAM, size=size, overlay=trails.draw if overlay else None)
+
+
+def show_kick(slow=4, overlay=True):
+    """在 notebook 里放踢球动画（可以播放、暂停、拖动）。橙色 = 直线（雅可比）预测的脚，青色 = 真实的脚。"""
+    return show(render_kick(slow=slow, overlay=overlay)[::2], fps=15)
+
+
+def view_kick(slow=4, repeat=3):
+    """弹出 MuJoCo 的 3D 窗口回放踢球（鼠标拖动转视角、滚轮缩放），播放 repeat 遍后自动关闭。"""
+    m = load_model()
+    trails = _Trails(m)
+
+    def overlay(scn, d):
+        if d.qpos[3 * KICK_LEG + 1] - STAND[0] < 1e-3:                 # 每一遍重新开始画轨迹
+            trails.real.clear()
+            trails.pred.clear()
+        trails.draw(scn, d)
+    mj_view(m, _kick_traj(m, slow), cam=CAM, fps=30, repeat=repeat, overlay=overlay)     # 30 帧/秒播 4 倍慢放的轨迹
+
+
 if __name__ == "__main__":
+    import sys
+    if "--view" in sys.argv:              # python sim.py --view：弹出 3D 窗口看“射门”
+        view_kick()
+        sys.exit()
     h0, k0 = STAND
     J = jac(h0, k0)
     print("站姿脚位置（相对髋轴）:", foot(h0, k0).round(4), "m")

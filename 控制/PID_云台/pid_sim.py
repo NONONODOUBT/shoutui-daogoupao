@@ -111,6 +111,64 @@ def overshoot_formula(z):
     return 100 * np.exp(-np.pi * z / np.sqrt(1 - z * z)) if z < 1 else 0.0
 
 
+# ---------------- 看画面：云台动画 ----------------
+def show_gimbal(cases, t_max=4.0, fps=12, speed=0.5):
+    """几种控制器的云台并排做成动画（notebook 里播放）：上面是枪管实际转到哪、虚线是目标；
+    装枪管那一刻出现红色箭头（重力矩）；下面是 q(t) 曲线跟着画出来。speed=0.5：半速慢放。
+    cases = [("只用 P", Case("P", kp=2, tau_load=0.05)), ...]"""
+    import matplotlib.pyplot as plt
+    from matplotlib import animation, rcParams
+    from IPython.display import HTML
+    runs = [(lab, c, simulate(c)) for lab, c in cases]
+    n = len(runs)
+    fig, axes = plt.subplots(2, n, figsize=(3.4 * n, 4.8), gridspec_kw={"height_ratios": [1.25, 1]}, squeeze=False, dpi=70)
+    arts = []
+    for j, (lab, c, r) in enumerate(runs):
+        a = axes[0, j]
+        a.set_aspect("equal"); a.set_xlim(-0.45, 1.25); a.set_ylim(-0.5, 0.75); a.axis("off"); a.set_title(lab, fontsize=12)
+        a.add_patch(plt.Rectangle((-0.22, -0.48), 0.44, 0.3, color="#5a6070"))
+        a.plot([0, 0], [-0.18, 0], color="#5a6070", lw=8)
+        a.plot([0, 1.15 * np.cos(c.r)], [0, 1.15 * np.sin(c.r)], "k--", lw=1)
+        a.text(1.15 * np.cos(c.r), 1.15 * np.sin(c.r) + 0.04, "目标", fontsize=9, ha="center")
+        barrel, = a.plot([], [], lw=11, color="tab:orange", solid_capstyle="round")
+        a.plot(0, 0, "o", color="#222", ms=11)
+        load = a.annotate("", xy=(0, 0), xytext=(0, 0), arrowprops=dict(arrowstyle="-|>", color="tab:red", lw=2.5))
+        lt = a.text(0, 0, "负载", color="tab:red", fontsize=9)
+        txt = a.text(-0.42, 0.66, "", fontsize=9, family="monospace")
+        b = axes[1, j]
+        sel = r["t"] <= t_max
+        b.plot(r["t"][sel], r["r"][sel], "k--", lw=1)
+        line, = b.plot([], [], color="tab:blue", lw=2)
+        if c.tau_load > 0 and c.t_load < t_max:
+            b.axvline(c.t_load, color="tab:red", lw=0.8, ls=":")
+        b.set_xlim(0, t_max); b.set_ylim(-0.02, max(0.3, r["q"][sel].max() * 1.12))
+        b.set_xlabel("t / s"); b.set_ylabel("q / rad")
+        arts.append((c, r, barrel, load, lt, txt, line))
+    fig.tight_layout(pad=0.4)
+
+    def step(i):
+        t = i * speed / fps
+        out = []
+        for c, r, barrel, load, lt, txt, line in arts:
+            k = min(int(t / TS), len(r["t"]) - 1)
+            q = r["q"][k]
+            barrel.set_data([-0.25 * np.cos(q), 1.0 * np.cos(q)], [-0.25 * np.sin(q), 1.0 * np.sin(q)])
+            on = c.tau_load > 0 and t >= c.t_load
+            tip = (0.85 * np.cos(q), 0.85 * np.sin(q))
+            load.xyann, load.xy = tip, (tip[0], tip[1] - 0.32)
+            lt.set_position((tip[0] + 0.05, tip[1] - 0.3))
+            load.set_visible(on); lt.set_visible(on)
+            txt.set_text(f"t = {t:4.2f} s   q = {np.degrees(q):5.1f}°")
+            line.set_data(r["t"][:k + 1], r["q"][:k + 1])
+            out += [barrel, load, lt, txt, line]
+        return out
+    anim = animation.FuncAnimation(fig, step, frames=int(t_max / speed * fps) + 1, interval=1000 / fps)
+    plt.close(fig)
+    rcParams["animation.frame_format"] = "jpeg"
+    rcParams["animation.embed_limit"] = 60
+    return HTML(anim.to_jshtml(fps=fps, default_mode="loop"))
+
+
 if __name__ == "__main__":
     # 直接运行本文件时的演示：打印本期的几个关键数，并画出 P / PI / PID 三条曲线。
     # 平时是被 notebook 用 from pid_sim import * 调用的。
